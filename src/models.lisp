@@ -1,10 +1,28 @@
 (defpackage #:progressor/models
   (:use #:cl)
+  (:import-from #:local-time
+                #:now
+                #:adjust-timestamp
+                #:timestamp<=
+                #:timestamp>=)
   (:export
    #:make-progress
    #:increment
-   #:print-progress))
+   #:print-progress
+   #:get-id
+   #:get-description
+   #:get-total
+   #:get-current
+   #:progress
+   #:expired-p
+   #:get-ttl
+   #:get-last-update-at
+   #:get-default-ttl))
 (in-package progressor/models)
+
+
+(defun get-default-ttl ()
+  (* 10 60))
 
 
 (defclass progress ()
@@ -24,12 +42,28 @@
    (current :type integer
             :initarg :current
             :initform 0
-            :accessor get-current)))
+            :accessor get-current)
+   (last-update-at :type integer
+                   :documentation "A timestamp of last `increment' call."
+                   :initarg :last-update-at
+                   :initform (local-time:now)
+                   :accessor get-last-update-at)
+   (ttl :type integer
+        :documentation "A number of seconds after the `last-update-at' when a progress will be removed from the list."
+        :initarg :ttl
+        :initform (get-default-ttl)
+        :accessor get-ttl)))
 
 
 (defun make-progress (id &key total
-                              (current 0)
-                              description)
+                           (current 0)
+                           description
+                           (ttl (get-default-ttl)))
+  (check-type id string)
+  
+  (when (string= id "")
+    (error "Id should be a non empty string"))
+  
   (when (and total
              (<= total 0))
     (error "Total should be a positive integer or nil."))
@@ -38,10 +72,11 @@
                  :id id
                  :description description
                  :total total
-                 :current current))
+                 :current current
+                 :ttl ttl))
 
 
-(defun print-progress (progress &key (stream t)
+(defun print-progress (progress &key (stream *standard-output*)
                                      (width 40)
                                      (char #\=))
   (cond
@@ -50,13 +85,15 @@
                       (get-total progress)))
             (current-width (min (ceiling (* width ratio))
                                 width)))
+       (write-char #\[
+                   stream)
        (loop repeat current-width
              do (write-char char
                             stream))
        (loop repeat (- width current-width)
              do (write-char #\Space
                             stream))
-       (format stream " ~F%"
+       (format stream "] ~F%"
                (coerce (* ratio 100)
                        'float))))
     (t (format stream "~A"
@@ -76,4 +113,22 @@
 (defun increment (progress &optional (value 1))
   (incf (get-current progress)
         value)
+  (setf (get-last-update-at progress)
+        (local-time:now))
   progress)
+
+
+(defun expired-p (progress)
+  (timestamp<=
+   (adjust-timestamp (get-last-update-at progress)
+     (offset :sec (get-ttl progress)))
+   (now)))
+
+
+(defmethod yason:encode ((progress progress) &optional stream)
+  (yason:encode-plist
+   (list :|id| (get-id progress)
+         :|description| (get-description progress)
+         :|total| (get-total progress)
+         :|current| (get-current progress))
+   stream))

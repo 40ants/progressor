@@ -15,5 +15,9 @@ How to collect progress bars from remote machines
 Ideas
 -----
 
+* Make progress reporting nice, like tqdm does::
+
+     68%|██████▊   | 679/1000 [01:23<00:40,  7.99it/s]
+
 * Add a data source from like: https://github.com/Xfennec/progress
   to show data about file downloads and cp, mv progresses.
